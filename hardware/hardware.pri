@@ -1,0 +1,1 @@
+# hardware/ —— 所有"零件"的清单（不在导航栏里、被页面拿去用的类） # 两个 .pri 现在结构完全一样了：都只有 HEADERS 和 SOURCES HEADERS += \ SOUR

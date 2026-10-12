@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>style/mainstyle.qss</file>
+        <!-- 以后每一级要用的图片，一行一个加在这里 -->
+    </qresource>
+</RCC>

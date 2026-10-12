@@ -1,0 +1,23 @@
+# ---- 构建产物：qmake/make 生成的，每次编译都会变，不进仓库 ----
+
+# 影子构建目录（build-arm/、build-host/），一条就够
+build-*/
+
+# qmake 生成的构建说明书
+Makefile
+
+# 编译出来的目标文件
+*.o
+
+# moc 工具生成的元对象代码 / rcc 工具生成的资源代码
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+
+# qmake 的缓存
+.qmake.stash
+
+# ---- 编辑器 / 系统垃圾 ----
+.vscode/
+*.swp
+.DS_Store
