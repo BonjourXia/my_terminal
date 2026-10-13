@@ -1,5 +1,6 @@
 #include "mainwidget.h"                     // 自己的头文件（成员变量声明都在里面）
 #include <QListWidgetItem>                  // 列表项类型：addItem 前要 new 一个
+#include"banna.h"
 
 // ==========================================================================
 // 导航栏每一项的"数据模板"：相当于一行两列的小表格
@@ -91,7 +92,7 @@ void MainWidget::windows_init()
         //   ()            参数列表：空的 = 调用它不用给参数
         //   -> QWidget *  返回类型：返回一个 QWidget*，也就是"造出来的那个页面"
         //   { return new QWidget; }  函数体：真被调用时，new 一个空白页返回
-        {"测试页A", []() -> QWidget * { return new QWidget; } },   // 空占位页
+        {"轮播图", []() -> QWidget * { return new banna; } },   // 空占位页
         {"测试页B", []() -> QWidget * { return new QWidget; } },   // 同上
     };
 

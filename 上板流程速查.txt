@@ -1,0 +1,172 @@
+================================================================
+     my_terminal · 改完代码怎么跑到板子上  完整流程速查
+     （2026-10-13 生成，忘了就打开照着敲）
+================================================================
+
+【一句话流程】
+    改代码 → make 编译 → adb push 推上去 → 杀掉旧进程 → 运行
+
+【项目位置（后面所有命令都围绕它）】
+    电脑上：/home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal
+    编译目录：上面的 build-arm/
+    板子上：/root/my_terminal/
+    交叉 qmake：/home/book/100ask_imx6ull-sdk/Buildroot_2020.02.x/output/host/bin/qmake
+
+
+----------------------------------------------------------------
+第 0 步：先确认板子连上了（每次开机/插拔 USB 后都做）
+----------------------------------------------------------------
+    adb devices
+        → 显示 "100ask_IMX6ULL   device"  就 OK
+        → 空白：重新插一下 USB 线；还不行就 adb kill-server && adb devices
+
+
+----------------------------------------------------------------
+第 1 步：编译（在电脑上）
+----------------------------------------------------------------
+    cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/build-arm
+    make -j$(nproc)
+
+    ◆ 什么时候"只要 make"：改了 .cpp / .h 的内容。make 会自动只重编改过的文件
+    ◆ 什么时候"要先重新 qmake"：
+        · 新增/删除了源文件
+        · 改了 .pro / .pri 里的 SOURCES += / HEADERS += / QT += / LIBS +=
+      重新 qmake 的命令：
+        MY_TERMINAL_BOARD=1 \
+        /home/book/100ask_imx6ull-sdk/Buildroot_2020.02.x/output/host/bin/qmake ../my_terminal.pro
+
+      ⚠ MY_TERMINAL_BOARD=1 这个开关不能忘：它是 .pro 里"编 ARM 版还是 x86 版"的开关。
+        跑完看输出，出现 "=== 构建目标：ARM 板 ===" 才对。
+        忘了它 → 编出来是电脑上跑的 x86 程序，推到板子上跑不了。
+      ⚠ 别手动加 -spec 参数，buildroot 的 qmake 有自己的默认 spec，加了反而报错。
+
+    ◆ 编完验证一句（重要）：
+        file my_terminal
+        正确 = "ELF 32-bit LSB ... ARM ... interpreter /lib/ld-linux-armhf.so.3"
+        错误 = "ELF 64-bit ... x86-64"  → 回上一步，检查 qmake 的环境变量
+
+    ◆ 编译报错的常见原因：
+        · 少分号 / 拼错名字 → 看报错的行号
+        · 新加的 .cpp 没写进 .pro 的 SOURCES += → 链接时报 undefined reference to ...
+        · 改了头文件里的类声明忘了保存 → 先存盘再编
+
+
+----------------------------------------------------------------
+第 2 步：推到板子上（在电脑上）
+----------------------------------------------------------------
+    cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/build-arm
+    adb push my_terminal /root/my_terminal/
+
+    成功输出类似：my_terminal: 1 file pushed ...
+    · 第 0 级只需要推这一个文件（样式表 qss 已经编进二进制里了）
+    · 以后级别要读图片/音乐/模型的，那些数据文件才需要另外推
+    · 想确认推成功：比对校验和
+        电脑：md5sum my_terminal
+        板子：adb shell "md5sum /root/my_terminal/my_terminal"
+      两串一样就说明推过去的和电脑上的是同一个文件
+
+
+----------------------------------------------------------------
+第 3 步：杀掉旧进程（在电脑上）
+----------------------------------------------------------------
+    adb shell "killall my_terminal"     # 上一次没退干净的自己
+    adb shell "killall mxapp2"          # 出厂 Snake 演示：开机自启、占着屏幕，必须杀
+
+    · 提示 "no process killed" 不是错误，表示那个进程本来就没在跑
+    · 板子一重启，mxapp2 又会自己回来 —— 所以每次开机后都要再杀一次
+
+
+----------------------------------------------------------------
+第 4 步：运行（在电脑上，三种方式按需选）
+----------------------------------------------------------------
+【方式 A：一条命令遥控（日常推荐，报错直接回显在电脑上）】
+
+    adb shell "cd /root/my_terminal && \
+      QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 \
+      TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf \
+      TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal \
+      TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root \
+      ./my_terminal"
+    退出：Ctrl+C
+
+【方式 B：进板子里手动跑】
+
+    adb shell                    # 在电脑上敲这一条，进入板子（提示符会变）
+      cd /root/my_terminal
+      QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 \
+      TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf \
+      TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal \
+      TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root \
+      ./my_terminal
+    ⚠ 进了板子之后，命令前面【不要】再加 adb shell —— 板子上的 adb
+      是用来当 USB 设备用的，在板子里敲它只会得到 error: closed
+
+【方式 C：后台常驻（关掉终端也不停）】
+
+    adb shell "setsid sh -c 'cd /root/my_terminal && \
+      QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 \
+      TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf \
+      TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal \
+      TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root \
+      ./my_terminal' >/tmp/myterm.log 2>&1 </dev/null &"
+
+    看日志：adb shell "cat /tmp/myterm.log"
+    停掉它：adb shell "killall my_terminal"
+    ⚠ 必须用 setsid。经 adb 启动时写 "nohup ... &" 会静默失效
+      （命令像执行了，进程根本没起来，日志也是空的）——实测踩过
+
+【那串环境变量到底是干嘛的（背不下来就照抄）】
+
+    QT_QPA_PLATFORM=linuxfb        直接往 /dev/fb0 帧缓冲上画（板子没有 X11/桌面）
+    QT_QPA_FB_NO_LIBINPUT=1        别用 libinput 那套去找输入设备
+    QT_QPA_FB_TSLIB=1              触摸改从 tslib 拿 ← 触摸能不能用的关键开关
+    TSLIB_TSDEVICE                 触摸设备节点（板子上是 /dev/input/event1）
+    TSLIB_CONFFILE                  tslib 的配置文件
+    TSLIB_PLUGINDIR                 tslib 的插件目录
+    TSLIB_CALIBFILE                触摸校准数据文件
+    TSLIB_FBDEVICE                 告诉 tslib 画到哪个帧缓冲
+    XDG_RUNTIME_DIR                Qt 要的一个运行时目录，不给会刷警告（不影响运行）
+
+    记忆要点：少了 TSLIB 那两个开关，现象就是"界面显示正常、点屏幕没反应"
+
+
+----------------------------------------------------------------
+第 5 步：验收（可选）
+----------------------------------------------------------------
+    截图（板子屏幕的实拍）：
+      adb shell "dd if=/dev/fb0 of=/tmp/shot.raw bs=4096 count=600"
+      adb pull /tmp/shot.raw /tmp/shot.raw
+      ffmpeg -f rawvideo -pix_fmt bgra -s 1024x600 -i /tmp/shot.raw /tmp/shot.png -y
+
+    · 启动后等 10 秒以上再截：控件是启动时一次性建出来的，第一帧出来得晚
+    · 屏幕分辨率固定 1024x600，所以 ffmpeg 参数写死这个数
+
+
+----------------------------------------------------------------
+出问题：对号入座
+----------------------------------------------------------------
+    现象                            原因 / 药
+    adb devices 空白                USB 掉线：重新插线；或 adb kill-server && adb devices
+    屏幕全黑 / 还是 Snake 画面      mxapp2 没杀掉：adb shell "killall mxapp2"
+    界面正常但触摸没反应            环境变量漏了（重点查 QT_QPA_FB_TSLIB / NO_LIBINPUT）
+    error: closed                   你把 adb shell 敲进了板子里面
+                                    先退回电脑提示符（book@100ask:...$）再敲
+    file 显示 x86-64                qmake 时忘了 MY_TERMINAL_BOARD=1，回第 1 步重来
+    ./my_terminal: not found        cd 错目录，或者第 2 步 push 没成功
+    程序秒退、没有任何输出          用前台方式（A/B）跑，报错会打在终端上
+    链接报 undefined reference      新加的源文件没写进 .pro 的 SOURCES +=
+    Could not find qmake spec       qmake 命令行里手动加了 -spec，去掉
+
+
+----------------------------------------------------------------
+一分钟速记版（可以整段复制）
+----------------------------------------------------------------
+    cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/build-arm
+    make -j$(nproc)
+    adb push my_terminal /root/my_terminal/
+    adb shell "killall my_terminal; killall mxapp2"
+    adb shell "cd /root/my_terminal && QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root ./my_terminal"
+
+    最后一条会一直占着终端（前台运行），Ctrl+C 退出。
+
+================================================================
