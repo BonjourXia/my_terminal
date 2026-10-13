@@ -1,6 +1,7 @@
 #include "mainwidget.h"                     // 自己的头文件（成员变量声明都在里面）
 #include <QListWidgetItem>                  // 列表项类型：addItem 前要 new 一个
 #include"banna.h"
+#include"imx6ulltest.h"    // 第 3 级：板载传感器页面（LED/BEEP + AP3216C 曲线 + ICM20608 六轴）
 
 // ==========================================================================
 // 导航栏每一项的"数据模板"：相当于一行两列的小表格
@@ -93,7 +94,7 @@ void MainWidget::windows_init()
         //   -> QWidget *  返回类型：返回一个 QWidget*，也就是"造出来的那个页面"
         //   { return new QWidget; }  函数体：真被调用时，new 一个空白页返回
         {"轮播图", []() -> QWidget * { return new banna; } },   // 空占位页
-        {"测试页B", []() -> QWidget * { return new QWidget; } },   // 同上
+        {"板载传感器", []() -> QWidget * { return new imx6ullTest; } },   // 同上
     };
 
     // 一趟循环同时喂两个容器：第 n 次迭代既加列表项、又加页面 → 两边的序号天然对齐
