@@ -6,6 +6,12 @@
 <file>images/banna_pic/banna/3.jpg</file>     <!-- 第 3 张：打开时显示在正中间 -->
 <file>images/banna_pic/banna/4.jpg</file>     <!-- 第 4 张 -->
 <file>images/banna_pic/banna/5.jpg</file>     <!-- 第 5 张 -->
+        <!-- ↓ 左右箭头 + 底部圆点：banna.cpp 里 url(:/images/banna_pic/other/…) 指的就是这 4 个 -->
+        <!--   少了它们不会报错，但箭头会变成全透明、圆点会退化成默认灰方块 -->
+<file>images/banna_pic/other/less_than.png</file>      <!-- 左箭头（pushButtonLeft） -->
+<file>images/banna_pic/other/more_than.png</file>      <!-- 右箭头（pushButtonRight） -->
+<file>images/banna_pic/other/normal_gray.png</file>    <!-- 圆点：没选中的样子 -->
+<file>images/banna_pic/other/hover_blue.png</file>     <!-- 圆点：选中的样子 -->
         <!-- 以后每一级要用的图片，一行一个加在这里 -->
     </qresource>
 </RCC>
