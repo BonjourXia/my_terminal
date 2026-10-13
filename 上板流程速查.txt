@@ -60,6 +60,11 @@
     成功输出类似：my_terminal: 1 file pushed ...
     · 第 0 级只需要推这一个文件（样式表 qss 已经编进二进制里了）
     · 以后级别要读图片/音乐/模型的，那些数据文件才需要另外推
+      （第 1.1 级轮播图那 5 张 jpg 不用推：已经用 res.qrc 打进二进制里了）
+    · 板子上还有一个 run.sh，是启动脚本（第 4 步要用到）。它不随编译变化，
+      只有想改启动参数时才需要重推一次：
+        adb push run.sh /root/my_terminal/ && adb shell "chmod +x /root/my_terminal/run.sh"
+      板上那份改坏了，照文末【附录】重建即可
     · 想确认推成功：比对校验和
         电脑：md5sum my_terminal
         板子：adb shell "md5sum /root/my_terminal/my_terminal"
@@ -89,6 +94,11 @@
       ./my_terminal"
     退出：Ctrl+C
 
+    等价简写（板子上已经放好这个脚本了）：
+      adb shell "sh /root/my_terminal/run.sh"
+      —— 它把"杀 mxapp2 + 杀自己 + 设那一串环境变量 + 启动"全打包好了，
+         脚本内容见文末【附录】。想临时改某个环境变量时，再用上面写全的那条。
+
 【方式 B：进板子里手动跑】
 
     adb shell                    # 在电脑上敲这一条，进入板子（提示符会变）
@@ -103,17 +113,19 @@
 
 【方式 C：后台常驻（关掉终端也不停）】
 
-    adb shell "setsid sh -c 'cd /root/my_terminal && \
-      QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 \
-      TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf \
-      TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal \
-      TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root \
-      ./my_terminal' >/tmp/myterm.log 2>&1 </dev/null &"
+    adb shell "start-stop-daemon -S -b -x /bin/sh -- -c '/root/my_terminal/run.sh >/tmp/myterm.log 2>&1'"
 
     看日志：adb shell "cat /tmp/myterm.log"
     停掉它：adb shell "killall my_terminal"
-    ⚠ 必须用 setsid。经 adb 启动时写 "nohup ... &" 会静默失效
-      （命令像执行了，进程根本没起来，日志也是空的）——实测踩过
+    查它在不在：adb shell "ps | grep my_terminal"
+
+    ⚠ 为什么不能写成 "命令 &"（2026-10-13 实测，之前这页写的 setsid 写法是错的）：
+      经 adb 启动的进程，adb shell 一退出就会被连坐杀掉 —— 写 "... &" 甚至
+      加 setsid，都是"有时活有时死"（撞运气），典型现象是：
+      命令看着执行成功了，但 ps 里没有、日志文件也没生成。
+      正确做法是让进程"交给 init 接管"：start-stop-daemon -b 会双 fork，
+      进程的爹变成 init，之后就与 adb 断不断线无关了。
+      （-S=启动 -b=后台 -x 后面跟要跑的程序，-- 后面是传给它的参数）
 
 【那串环境变量到底是干嘛的（背不下来就照抄）】
 
@@ -154,6 +166,10 @@
     file 显示 x86-64                qmake 时忘了 MY_TERMINAL_BOARD=1，回第 1 步重来
     ./my_terminal: not found        cd 错目录，或者第 2 步 push 没成功
     程序秒退、没有任何输出          用前台方式（A/B）跑，报错会打在终端上
+    后台起了但 ps 里没有            方式 C 没写对：不能写 "命令 &"，
+                                    要用 start-stop-daemon -b（详见方式 C 的说明）
+    板子上时间显示 1970 年           板子没有 RTC 电池，正常现象。时间戳不能用来
+                                    判断文件新旧 —— 要比版本就比 md5
     链接报 undefined reference      新加的源文件没写进 .pro 的 SOURCES +=
     Could not find qmake spec       qmake 命令行里手动加了 -spec，去掉
 
@@ -168,5 +184,36 @@
     adb shell "cd /root/my_terminal && QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root ./my_terminal"
 
     最后一条会一直占着终端（前台运行），Ctrl+C 退出。
+    （也可以简写成 adb shell "sh /root/my_terminal/run.sh"）
+
+    不想占终端、要它一直在板上跑：
+    adb shell "start-stop-daemon -S -b -x /bin/sh -- -c '/root/my_terminal/run.sh >/tmp/myterm.log 2>&1'"
+
+
+----------------------------------------------------------------
+附录：板子上 /root/my_terminal/run.sh 的内容（改坏了照这个重建）
+----------------------------------------------------------------
+    #!/bin/sh
+    killall mxapp2 2>/dev/null
+    killall my_terminal 2>/dev/null
+    sleep 1
+    mkdir -p /tmp/runtime-root
+    chmod 700 /tmp/runtime-root
+    cd /root/my_terminal || exit 1
+    QT_QPA_PLATFORM=linuxfb \
+    QT_QPA_FB_NO_LIBINPUT=1 \
+    QT_QPA_FB_TSLIB=1 \
+    TSLIB_TSDEVICE=/dev/input/event1 \
+    TSLIB_CONFFILE=/etc/ts.conf \
+    TSLIB_PLUGINDIR=/usr/lib/ts \
+    TSLIB_CALIBFILE=/etc/pointercal \
+    TSLIB_FBDEVICE=/dev/fb0 \
+    XDG_RUNTIME_DIR=/tmp/runtime-root \
+    exec ./my_terminal
+
+    · 前面几行是"干活前的准备"：杀掉出厂 Snake、杀掉上次的自己、备好 Qt 要的目录
+    · 最后 exec ./my_terminal：exec 表示"用这个程序替换掉脚本本身"，
+      所以进程就是 my_terminal 自己（ps 里看到的是 ./my_terminal，没有多余的 sh）
+    · 改完记得 adb shell "chmod +x /root/my_terminal/run.sh"
 
 ================================================================

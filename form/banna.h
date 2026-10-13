@@ -35,7 +35,24 @@ private:
     QPushButton *pushButtonFourth;
     QPushButton *pushButtonFifth;
 
+    // ---- 轮播用的"账本"（第 1.2 级新增）----
+    QLabel      *labelArray[5];       // 5 个 label 的"数组写法"：labelArray[0] 就是 labelFirst
+    QPushButton *dotArray[5];         // 5 个圆点的"数组写法"：dotArray[0] 就是 pushButtonFirst
+    QRect        slotRect[5];         // 5 个"槽位"的坐标（x、y、宽、高都装在里面）
+    int          slotOf[5];           // slotOf[i]：第 i 张图此刻占着第几个槽位（0~4）
+    QPropertyAnimation *animArray[5]; // 每张图一条动画，管它自己"边滑边缩放"
+    QParallelAnimationGroup *animationGroup; // 5 条动画捆成一组：一起开始、一起结束
+    QButtonGroup *dotGroup;           // 5 个圆点互斥：任何时刻点亮的只有一个
+    QTimer      *changeImageTimer;    // 自动轮播的节拍器（每 3 秒响一次）
+
     void ui_init();                    // 建控件、摆坐标（= 原来 ui->setupUi(this) 干的活）
+    void startSlide(bool isNext);      // 开一轮滑动：isNext=true → 整排图往左挪一格
+    void updateZOrder();               // 重排 5 张图的上下层：越靠中间的越浮在上面
+
+private slots:
+    void slot_changeImageTimer();      // 节拍器到点 → 自动滑一次
+    void on_pushButtonLeft_clicked();  // 点左箭头 → 整排图往右挪一格
+    void on_pushButtonRight_clicked(); // 点右箭头 → 整排图往左挪一格
 };
 
 #endif
