@@ -1,6 +1,11 @@
 <RCC>
     <qresource prefix="/">
         <file>style/mainstyle.qss</file>
+        <file>images/banna_pic/banna/1.jpg</file>     <!-- 第 1 张：对应 labelFirst -->
+<file>images/banna_pic/banna/2.jpg</file>     <!-- 第 2 张 -->
+<file>images/banna_pic/banna/3.jpg</file>     <!-- 第 3 张：打开时显示在正中间 -->
+<file>images/banna_pic/banna/4.jpg</file>     <!-- 第 4 张 -->
+<file>images/banna_pic/banna/5.jpg</file>     <!-- 第 5 张 -->
         <!-- 以后每一级要用的图片，一行一个加在这里 -->
     </qresource>
 </RCC>
