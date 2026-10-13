@@ -1,0 +1,190 @@
+================================================================
+        my_terminal 项目 · Git 常用命令速查
+        （2026-10-12 生成，放在项目目录里，忘了就打开看）
+================================================================
+
+【我的仓库信息】
+  项目目录     : /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal
+  GitHub 地址  : git@github.com:BonjourXia/my_terminal.git
+  分支         : main（本地与远端同名、已绑定，直接 git push 即可）
+  GitHub 用户名: BonjourXia        ← 网址里的那个，跟本地署名不是一回事
+  提交署名     : Selenophilia <2906422622@qq.com>   ← git config 里配的，只是签字
+  已有提交     : 0a75bbc 第0级
+
+----------------------------------------------------------------
+一、核心心智模型（最重要，先看这个）
+----------------------------------------------------------------
+     你改文件 → git add → git commit → git push
+     (工作区)   (装篮子)   (存本地存档)   (复制到 GitHub)
+
+  · commit = 在自己电脑上打个存档，不联网也能做
+  · push   = 把存档复制一份到 GitHub，这一步才叫"上传"
+  · 两步分开：可以一天 commit 十次，晚上 push 一次
+  · 只要 commit 过，内容就丢不了；只有"改了没 commit"才会丢
+
+----------------------------------------------------------------
+二、天天用的 5 条命令
+----------------------------------------------------------------
+  git status                 看状态（哪些改了没存档、哪些存了没上传）
+  git add .                  把当前目录所有改动装进篮子
+  git commit -m "说明文字"    打成一个存档（引号里写清楚改了什么）
+  git push                   同步到 GitHub（首次之后不用再加 -u）
+  git log --oneline          列出所有存档，一行一个
+
+  ★ 完成"第 1 级"后的完整动作：
+      cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal
+      git status                            # ① 先看一眼改了哪些文件
+      git add .                             # ② 全部装篮
+      git commit -m "第1级：banna 轮播图"    # ③ 存档
+      git push                              # ④ 上传
+
+----------------------------------------------------------------
+三、查历史 / 对比 / 恢复
+----------------------------------------------------------------
+  git log --oneline                       列出所有存档（编号 + 说明）
+  git show 0a75bbc                        看那一版改了哪些文件、具体改了什么
+  git show 0a75bbc --stat                 那次提交动了哪几个文件
+  git show 0a75bbc:main.cpp               直接看那一版里 main.cpp 的完整内容
+                                          （只读，不改任何东西）
+  git diff 0a75bbc                        从那一版到现在，一共改了什么
+  git diff                                还没装篮的改动，具体改了哪几行
+  git restore --source=0a75bbc main.cpp   把 main.cpp 退回那一版的样子
+  git checkout 0a75bbc                    时光机：整个工程回到那一版
+                                          （看完用 git switch main 回来）
+
+----------------------------------------------------------------
+四、新增文件夹：怎么进"上传名单" / 怎么排除
+----------------------------------------------------------------
+  ◆ 想让新文件夹【一起上传】——默认就会，不用特殊命令：
+      新建的文件夹和文件，git add . 会自动收进去。
+      想单独加某一个：   git add 新文件夹名/
+      加完检查收没收进：  git status      （绿色 = 已装篮，红色 = 还没）
+      然后照常 commit + push 即可。
+
+  ◆ 如果它是【编译产物 / 临时垃圾】，不想上传 → 写进 .gitignore：
+      echo "新文件夹名/" >> .gitignore      追加一行
+      （或直接用编辑器打开 .gitignore 加一行）
+      验证生效没有：
+      git check-ignore -v 新文件夹名/
+      有输出 = 已忽略；没输出 = 还在上传名单里，规则没写对。
+
+  ◆ ⚠️ .gitignore 的坑：不支持行尾注释！
+      错：  build-arm/   # 构建目录      ← 注释被当成规则的一部分，整行失效
+      对：  # 构建目录
+            build-arm/
+
+  ◆ 被 .gitignore 忽略的东西，git add . 不碰它，git status 也不显示。
+    想让某个已被忽略的文件夹重新纳入 → 把 .gitignore 里那行删掉即可。
+
+  ◆ 本仓库当前 .gitignore 的内容：
+      build-*/          （build-arm/、build-host/ 等影子构建目录全忽略）
+      Makefile
+      *.o
+      moc_*.cpp   moc_*.h   qrc_*.cpp
+      .qmake.stash
+      .vscode/   *.swp   .DS_Store
+
+  ◆ 中文文件名在 git status 里显示成一串 \345\270\... 是正常的（git 默认转义）。
+    想让它正常显示中文，执行一次：
+      git config --global core.quotepath false
+
+  ◆ 顺带（Qt 编译那边，不是 git）：新写的源码要让 Qt 编译进去，还得在 .pro
+    文件里往 HEADERS += / SOURCES += 里加，或者建 .pri 用 include() 包进来。
+    那是"编译名单"，跟"上传名单"是两回事，别搞混。
+
+----------------------------------------------------------------
+五、换电脑 / 换地方才用
+----------------------------------------------------------------
+  git clone git@github.com:BonjourXia/my_terminal.git   新电脑第一次搬整个仓库
+  git pull                                              别的机器推过之后，这边拉下来
+  git remote -v                                         看当前绑定的远端地址
+
+----------------------------------------------------------------
+六、危险命令黑名单（现在别碰）
+----------------------------------------------------------------
+  git reset --hard     丢掉某个存档之后的所有改动，不留痕
+  git push -f          强行覆盖 GitHub 历史，可能冲掉别的东西
+  git clean -fd        删除所有没进过 git 的新文件
+  git restore .        丢弃所有还没 commit 的改动
+  （共同点：都会让"没存档的东西"永久消失）
+
+----------------------------------------------------------------
+七、以前的内容还能找回来吗？分三种情况
+----------------------------------------------------------------
+  A. 已经 commit 过的旧版本（比如第 0 级）→ 能，永远能 √
+     内容完整存在那个编号里，跟推没推上去无关。
+       翻旧账：git show 0a75bbc:main.cpp
+       退回旧版：git restore --source=0a75bbc main.cpp
+
+  B. commit 了但还没 push → 能，也丢不了 √
+       git status                 会提示 ahead of 'origin/main' by N commit
+       git log origin/main..main  精确列出还没上传的那几条
+
+  C. 改了但还没 commit → 找不回来 ⚠ 唯一会丢的情况
+       git status 里显示为红色的改动不受 git 保护，误删 / 误 restore 就没了。
+       → 所以：写完一小块就 commit 一次，commit 不要钱。
+
+  另外：被 .gitignore 排除的文件（如 build-arm/）从没进过 git，git 里翻不出来；
+        但它们是编译产物，重新编译就有，不用心疼。
+
+----------------------------------------------------------------
+八、常见报错对照表
+----------------------------------------------------------------
+  Permission denied (publickey)
+      GitHub 不认你的钥匙：公钥没贴好 / 贴错文件 / 贴到别的账号
+      排查：ssh -vT git@github.com
+  Repository not found
+      地址里的用户名或仓库名写错 → 回网页复制 SSH 地址
+  Host key verification failed
+      ssh-keygen -R github.com 清掉旧记录再重连
+  connect to host github.com port 22: Connection timed out
+      网络封了 22 端口，改走 443（见下面第九节第 5 条）
+  Everything up-to-date / nothing to commit
+      都不是错误：没有新提交可推 / 文件没改动
+
+----------------------------------------------------------------
+九、SSH 当初是怎么配的（换电脑时照做）
+----------------------------------------------------------------
+  1) 生成钥匙：  ssh-keygen -t ed25519 -C "2906422622@qq.com"
+                 三句提示全部直接回车（passphrase 留空）
+  2) 打印公钥：  cat ~/.ssh/id_ed25519.pub
+                 整行复制 —— 拿 .pub 那个！内容是 "ssh-ed25519 AAAA... 邮箱"
+  3) 贴到网页：  头像 → Settings → SSH and GPG keys → New SSH key
+                 Title 随便写（如 Ubuntu 笔记本）→ Key 粘贴 → Add SSH key
+  4) 验证：      ssh -T git@github.com
+                 第一次问 yes/no 输 yes；正确指纹（ED25519）：
+                 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU
+                 看到 "Hi xxx! You've successfully authenticated" 即成功
+  5) 若 22 端口被封，新建 ~/.ssh/config 写四行：
+       Host github.com
+           Hostname ssh.github.com
+           Port 443
+           User git
+
+  配好之后 git push 永远不会再问密码。
+  GitHub 的登录密码在 git 里永远用不上（它不是 token 就是 SSH 钥匙）。
+
+----------------------------------------------------------------
+十、提交会占很多空间吗？旧版本在 GitHub 上还在吗？
+----------------------------------------------------------------
+  · commit 占的是【硬盘】，不是内存（RAM）。内容存在项目的 .git 目录里，
+    不打开历史就不会加载，跟程序运行速度没关系。
+  · 实测本仓库：整个 .git（含全部历史）才 280 KB，其中真正的存档数据 120 KB。
+    第 0 级 9 个源文件加起来只有 7 KB。每次提交只多存"改过的那个文件的新版本"，
+    没动的文件不重复存，文本还会被压缩 → 提交一百次也就多几百 KB。
+  · ⚠ 例外：图片 / 音频 / 视频这类大二进制文件，每改一次就存一整份（压不动），
+    别把大视频、模型文件往仓库里塞。几张 jpg 没问题。
+  · GitHub 上保存的是【完整历史】，不是只有最新版：
+    推送第 1 级之后，第 0 级依然在。网页上看旧版本：
+      仓库主页 → Commits（时钟图标）→ 点某条提交 → 右上 Browse files
+      → 整个工程回到那一刻的样子，每个文件都能点开看、下载
+    看单个文件的历史：打开该文件 → 右上角 History
+  · 注意：只有 push 过的版本 GitHub 上才有；只在本地 commit 的只在你自己电脑。
+  · 也正因为历史会保留一切，别把密码、密钥 commit 进去——删了也还在历史里。
+
+================================================================
+  日常口诀：
+    改完 → git status 看一眼 → git add . → git commit -m "..." → git push
+
+  出问题对号入座：忘命令看第二/三节，撤销看第六/七节，报错看第八节。
+================================================================
