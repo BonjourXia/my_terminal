@@ -54,7 +54,7 @@ MainWidget::MainWidget(QWidget *parent) : QWidget(parent)
     //   这里不重新写数字，直接问主窗口"你多大我就多大"，以后改分辨率只用改一处
     widget->resize(this->size());
 
-    this->windows_init();                       // 建导航栏 + 页面堆栈
+    this->windows_init();   // 建导航栏 + 页面堆栈                    
 }
 
 // 析构函数：什么都不用做

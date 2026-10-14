@@ -1,12 +1,4 @@
-/******************************************************************
-Copyright © Deng Zhimao Co., Ltd. 1990-2021. All rights reserved.
-* @projectName   sensor
-* @brief         ap3216c.h  (adapted for I2C userspace on 100ask IMX6ULL)
-* @author        Deng Zhimao
-* @email         1252699831@qq.com
-* @net           www.openedv.com
-* @date          2020-07-10
-*******************************************************************/
+
 #ifndef AP3216C_H
 #define AP3216C_H
 
@@ -39,22 +31,22 @@ private:
     QString irdata;
 
     void initI2cDevice();       // 初始化I2C和传感器
-    int i2cWriteReg(uint8_t reg, uint8_t val);
-    int i2cReadReg(uint8_t reg, uint8_t *val);
+    int i2cWriteReg(uint8_t reg, uint8_t val);//写寄存器方法
+    int i2cReadReg(uint8_t reg, uint8_t *val);//读寄存器方法
 
     QString readAlsData();
     QString readPsData();
     QString readIrData();
 
-    Q_PROPERTY(QString alsData READ alsData NOTIFY ap3216cDataChanged)
+    Q_PROPERTY(QString alsData READ alsData NOTIFY ap3216cDataChanged)//Q_PROPERTY：把"数据"变成 Qt 认识的"属性" ----
     Q_PROPERTY(QString psData READ psData NOTIFY ap3216cDataChanged)
     Q_PROPERTY(QString irData READ irData NOTIFY ap3216cDataChanged)
 
 public slots:
-    void timer_timeout();
+    void timer_timeout();//定时器
 
 signals:
-    void ap3216cDataChanged();
+    void ap3216cDataChanged();//信号触发修改
 
 };
 
