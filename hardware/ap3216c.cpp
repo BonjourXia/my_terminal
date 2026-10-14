@@ -1,136 +1,233 @@
-/******************************************************************
-Copyright © Deng Zhimao Co., Ltd. 1990-2021. All rights reserved.
-* @projectName   sensor
-* @brief         ap3216c.cpp  (adapted for I2C userspace on 100ask IMX6ULL)
-* @author        Deng Zhimao
-* @email         1252699831@qq.com
-* @net           www.openedv.com
-* @date          2020-07-10
-*******************************************************************/
-#include "ap3216c.h"
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
-#include <QDebug>
+// ============================================================================
+// hardware/ap3216c.cpp —— AP3216C 光照/接近/红外三合一传感器
+//
+// 【这个类为什么和 icm20608 长得完全不一样】
+//   ICM20608 内核里有现成驱动 → 用户态只要去 /sys 读文本文件（坐公交）
+//   AP3216C  内核里**没有**驱动 → 只能自己 open("/dev/i2c-0") 发 I2C 报文（自己开车）
+//   所以下面才会出现一堆系统头文件（fcntl.h / unistd.h / sys/ioctl.h …），
+//   它们都是"直接和内核设备打交道"才需要的；QFile 在这一层帮不上忙。
+//
+// 【两种"地址"千万别混】在 I2C 上找一颗芯片要过两道门：
+//   ① 从机地址 0x1E  —— "找哪颗芯片"（ioctl(I2C_SLAVE, 0x1E) 设一次，之后一直有效）
+//   ② 寄存器地址 0x00 / 0x0A…0x0F —— "问它哪件事"（每次读写都要带上，像拨分机）
+//
+// 【数据流】
+//   QTimer 每 500ms 响一次 → timer_timeout() 读 6 个寄存器 → 拼成 3 个数字串
+//   → emit ap3216cDataChanged() → 页面（form/imx6ulltest.cpp）的槽收到后刷新界面
+//   注意分工：这个类只负责"拿到数据"，一行界面代码都没有
+// ============================================================================
 
-#define AP3216C_ADDR        0x1E
-#define AP3216C_SYSCONFIG   0x00
-#define AP3216C_IRDATALOW   0x0A
-#define AP3216C_IRDATAHIGH  0x0B
-#define AP3216C_ALSDATALOW  0x0C
-#define AP3216C_ALSDATAHIGH 0x0D
-#define AP3216C_PSDATALOW   0x0E
-#define AP3216C_PSDATAHIGH  0x0F
+#include "ap3216c.h"        // 自己的头文件：类声明、成员变量、信号、槽都在里面
+#include <stdio.h>          // C 标准输入输出（本文件其实没用到，原码留下的行李）
+#include <string.h>         // 字符串处理（同上，没用到）
+#include <sys/types.h>      // 系统类型（read/write 的返回类型 ssize_t 等靠它）
+#include <sys/stat.h>       // 文件状态相关（open 的权限参数；本文件用不到）
+#include <fcntl.h>          // ★ open() 和 O_RDWR 在这里
+#include <unistd.h>         // ★ close() / read() / write() / usleep() 在这里
+#include <sys/ioctl.h>      // ★ ioctl() 在这里（给设备下"控制命令"的通用入口）
+#include <linux/i2c-dev.h>  // ★ I2C_SLAVE 等宏、i2c_msg 结构体在这个内核头文件里
+#include <QDebug>           // qDebug()：往串口/终端打日志
 
+// ---------------------------------------------------------------------------
+// 门牌号 + 分机表（芯片手册 Register Map 的翻译）
+//   地址一律 16 进制，写成 0x 开头
+// ---------------------------------------------------------------------------
+#define AP3216C_ADDR        0x1E    // ① 从机地址：这颗芯片在 I2C 总线上的门牌号（7 位）
+                                    //    总线上实际发的是 0x3C(写)/0x3D(读) = 0x1E<<1 补读写位，
+                                    //    内核替你算好，代码里只管写 0x1E
+
+#define AP3216C_SYSCONFIG   0x00    // ② 以下全是**寄存器地址**（分机号）
+                                    //    0x00 系统配置寄存器：模式选择 / 软复位
+                                    //    本文件用它两次：先写 0x04 复位，再写 0x03 开全模式
+#define AP3216C_IRDATALOW   0x0A    // 红外数据低字节（bit7 是"数据有效"标志）
+#define AP3216C_IRDATAHIGH  0x0B    // 红外数据高字节
+#define AP3216C_ALSDATALOW  0x0C    // 环境光（可见光）数据低字节
+#define AP3216C_ALSDATAHIGH 0x0D    // 环境光数据高字节
+#define AP3216C_PSDATALOW   0x0E    // 接近数据低字节（bit6 是"数据有效"标志）
+#define AP3216C_PSDATAHIGH  0x0F    // 接近数据高字节
+// 三组数据都是"低字节在前、高字节在后"成对排的，读的时候别弄反
+
+// ---------------------------------------------------------------------------
+// 构造函数：只做"准备工作"，不读数据（读数据是定时器的事）
+//   参数 QObject *parent 是 Qt 对象树里的"爹"：传给谁，谁就负责将来 delete 我。
+//   页面里的写法是 new Ap3216c(this) —— 把页面自己当爹传进来，页面没了它也没了。
+//   初始化列表 : QObject(parent) 就是把 parent 交给基类那部分去登记对象树。
+// ---------------------------------------------------------------------------
 Ap3216c::Ap3216c(QObject *parent) : QObject (parent)
 {
+    // new QTimer()：造一个定时器，它负责"每 500ms 叫我一次"
+    //   ⚠ 这里**没给父对象**（原码如此）：本对象析构时它不会被自动回收，算内存泄漏。
+    //     想修就是 new QTimer(this)，一行的事。
     timer = new QTimer();
+
+    // i2cFd 存"打开的设备文件描述符"（fd = file descriptor，一个整数句柄）。
+    //   先赋 -1 当"哨兵值"：约定 -1 = 还没打开 / 打开失败。
+    //   为什么要先写 -1：万一 initI2cDevice() 里 open 失败，析构函数看到 -1 就知道
+    //   "别去 close 一个不存在的 fd"（close(-1) 会失败并搅乱 errno）
     i2cFd = -1;
-    i2cInitialized = false;
+    i2cInitialized = false;         // 同理：先当"没初始化成功"，真成功了再翻成 true
 
     /* 打开I2C设备并初始化传感器 */
-    initI2cDevice();
+    initI2cDevice();                // 真干活的是它（见下面）
 
+    // connect(谁发, 发什么, 谁收, 收到干什么)：定时器到点就调本对象的 timer_timeout()
+    //   老式字符串写法：SLOT 里的函数必须写在头文件的 slots: 段里，否则**运行期**静默失效
     connect(timer, SIGNAL(timeout()), this, SLOT(timer_timeout()));
 }
 
+// ---------------------------------------------------------------------------
+// 析构函数：对象被销毁时自动调用。这里只还一样东西：打开的 fd
+// ---------------------------------------------------------------------------
 Ap3216c::~Ap3216c()
 {
+    // 判 >= 0 才 close：-1 是"没打开"的标记，close(-1) 是没意义的错误调用
+    //（timer 为什么不删？见构造函数的 ⚠ —— 它没挂上对象树，这里也就漏掉了）
     if (i2cFd >= 0)
         close(i2cFd);
 }
 
+// ---------------------------------------------------------------------------
+// 打开 I2C 总线 + 把传感器配成"连续转换"模式（无参数、无返回值）
+//   谁调它：构造函数。失败时只打日志、不崩 —— 没接传感器时对象照常存在，只是读不出数
+// ---------------------------------------------------------------------------
 void Ap3216c::initI2cDevice()
 {
     /* 打开I2C-0总线 */
+    // ⚠ 打开的是**整条总线**（i2c-0），不是某颗芯片！
+    //   O_RDWR = 以可读可写方式打开（后面既要 write 寄存器号、又要 read 数据）
+    //   返回一个非负整数 fd；失败返回 -1
     i2cFd = open("/dev/i2c-0", O_RDWR);
     if (i2cFd < 0) {
         qDebug() << "AP3216C: Cannot open /dev/i2c-0";
-        return;
+        return;                     // 总线都打不开，后面什么都别做了
     }
 
     /* 设置I2C从设备地址 */
+    // ioctl = "给设备下控制命令"的通用接口。这一句给 fd 绑定从机地址 0x1E，
+    //   之后所有 read/write 都自动发给这颗芯片，不用每次自己拼地址字节。
+    //   一条总线上可能挂好几颗芯片，所以必须先"认领"目标。
+    //   返回值 <0 表示失败（常见原因：该地址已被某个内核驱动占着，内核返回 -EBUSY）
     if (ioctl(i2cFd, I2C_SLAVE, AP3216C_ADDR) < 0) {
         qDebug() << "AP3216C: Failed to set I2C slave address";
-        close(i2cFd);
-        i2cFd = -1;
+        close(i2cFd);               // 认领失败 → 把已打开的 fd 还回去（否则泄漏一个 fd）
+        i2cFd = -1;                 // 并恢复"没打开"的标记，析构时就不会重复 close
         return;
     }
 
     /* 复位/初始化传感器 */
+    // 往 0x00 寄存器写 0x04：bit2 = 1 = 软件复位（芯片内部重新起步，该位写 1 后自动清 0）
     if (i2cWriteReg(AP3216C_SYSCONFIG, 0x04) < 0) {
         qDebug() << "AP3216C: Init failed (reset)";
-        return;
+        return;                     // 写不进去 = 芯片没应答：地址不对或芯片没上电
     }
 
     /* 等待10ms以上 */
+    // 为什么必须等：芯片复位后内部要"喘口气"才收得下一条命令，手册要求 ≥10ms。
+    //   不等会怎样：紧接着那条模式命令被丢掉 → 之后永远读到 0。
+    //   usleep 的单位是**微秒**：15000 微秒 = 15ms（留了点余量）
     usleep(15000);
 
     /* 启动ALS+PS+IR全模式转换 */
+    // 再往 0x00 写 0x03：bit1:0 = 11 → ALS + PS + IR 三个功能全开。
+    //   芯片从此在后台按固定周期自己采样，你随时问随时有值（不用催它）
     if (i2cWriteReg(AP3216C_SYSCONFIG, 0x03) < 0) {
         qDebug() << "AP3216C: Init failed (start)";
         return;
     }
 
-    i2cInitialized = true;
+    i2cInitialized = true;          // 走到这里才算真正初始化成功（后面定时器要查这个标志）
     qDebug() << "AP3216C: I2C initialized on /dev/i2c-0 addr 0x1E";
 }
 
+// ---------------------------------------------------------------------------
+// 写一个寄存器：① reg = 寄存器地址（分机号）  ② val = 要写进去的内容
+// 返回 0 = 成功，-1 = 失败
+// ---------------------------------------------------------------------------
 int Ap3216c::i2cWriteReg(uint8_t reg, uint8_t val)
 {
-    if (i2cFd < 0) return -1;
-    uint8_t buf[2] = {reg, val};
-    if (write(i2cFd, buf, 2) != 2)
-        return -1;
+    if (i2cFd < 0) return -1;       // 总线都没打开，直接认输
+    uint8_t buf[2] = {reg, val};    // 两个字节：**第 1 个是寄存器号**，第 2 个才是数据。
+                                    // i2c-dev 的规矩：write 几个字节，它就在总线上原样发几个：
+                                    //   START | 0x3C | reg | val | STOP   ← 正好是芯片要的时序
+    if (write(i2cFd, buf, 2) != 2)  // 返回值 = "成功写出去的字节数"，必须等于 2
+        return -1;                  // 返回 1 说明只送出一个字节，-1 说明总线没人应答
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// 读一个寄存器：① reg = 寄存器地址  ② val = 输出参数，读到的字节放这儿
+//   （输出参数写成 uint8_t * 是因为 C 函数只能返回一个值，答案得靠指针带回来）
+// 返回 0 = 成功，-1 = 失败
+// ---------------------------------------------------------------------------
 int Ap3216c::i2cReadReg(uint8_t reg, uint8_t *val)
 {
     if (i2cFd < 0) return -1;
     /* 写入寄存器地址 */
+    // 芯片收到写传输时，把第一个数据字节当成"寄存器地址"存进指针；
+    // 芯片收到读传输时，从指针处吐字节，然后指针 +1；
+    // 两次传输之间的 STOP 不会把指针清掉（这是绝大多数 I2C 传感器的约定）。
+    //   第一趟总线上发的是：START | 0x3C | reg | STOP
     if (write(i2cFd, &reg, 1) != 1)
         return -1;
     /* 读取寄存器值 */
+    // 第二趟：START | 0x3D | data | STOP
+    //   ⚠ 这仍是两次独立的传输，中间总线是放开的，严格做法要用 ioctl(I2C_RDWR)
+    //     把两条报文打包成一次传输（中间用 Repeated START），才保证"设地址-读值"原子完成
     if (read(i2cFd, val, 1) != 1)
-        return -1;
+        return -1;                  // 读回来不是 1 个字节就算失败
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// 定时器到点的槽函数：读三组数据 → 发信号通知界面（无参数、无返回值）
+//   谁调它：构造函数里那根 connect —— 定时器每 500ms 响一次就进这里
+// ---------------------------------------------------------------------------
 void Ap3216c::timer_timeout()
 {
-    if (!i2cInitialized) {
+    if (!i2cInitialized) {          // 初始化没成功就别去读（读也是白读，还刷一屏错误）
         return;
     }
 
+    // 三个都读一遍，分别存进三个 QString 成员
+    //   注意每个 readXxxData() 失败时返回的是字符串 "I2C Error"，不是数字
     alsdata = readAlsData();
     psdata = readPsData();
     irdata = readIrData();
+
+    // 喊一嗓子"数据更新了"：谁 connect 了这个信号，谁的槽就被调用
+    //   （本对象不知道也不关心谁在看数据 —— 这就是"零件不碰界面"的分工）
     emit ap3216cDataChanged();
 }
 
+// ---------------------------------------------------------------------------
+// 读红外（IR）：返回字符串形式的数值；读失败返回 "I2C Error"
+//   IR 数据 10 位，拆在两个寄存器：0x0A 低字节 + 0x0B 高字节
+// ---------------------------------------------------------------------------
 QString Ap3216c::readIrData()
 {
-    uint8_t irLow = 0, irHigh = 0;
+    uint8_t irLow = 0, irHigh = 0;  // 初始化成 0，防止"读失败时用了未初始化的垃圾值"
 
     if (i2cReadReg(AP3216C_IRDATALOW, &irLow) < 0)
-        return "I2C Error";
+        return "I2C Error";         // 低字节都没读到，后面别拼了
     if (i2cReadReg(AP3216C_IRDATAHIGH, &irHigh) < 0)
         return "I2C Error";
 
     /* 数据无效标志位检查 */
-    if (irLow & 0x80)
+    // 低字节 bit7 是芯片给的"本次读数可不可信"标志（溢出/出界之类），
+    //   置位时原厂例程也直接当 0 处理
+    if (irLow & 0x80)               // & 是按位与：只挑出 bit7 看它是不是 1
         return "0";
 
+    // 拼装：高字节整体左移 2 位，低字节只留低 2 位（bit1:0）→ 共 10 位
+    //   (uint16_t) 强制转换不能省：uint8_t 左移 8 位以上会先按 int 提升，
+    //   写清楚类型才不会在高位留垃圾
     uint16_t ir = ((uint16_t)irHigh << 2) | (irLow & 0x03);
-    return QString::number(ir);
+    return QString::number(ir);     // 数字 → 字符串，默认十进制（想 16 进制可传 16）
 }
 
+// ---------------------------------------------------------------------------
+// 读接近（PS）：同样两字节拼 10 位，但掩码规则和 IR 不一样（标志位在别的位上）
+// ---------------------------------------------------------------------------
 QString Ap3216c::readPsData()
 {
     uint8_t psLow = 0, psHigh = 0;
@@ -141,13 +238,20 @@ QString Ap3216c::readPsData()
         return "I2C Error";
 
     /* 数据无效标志位检查 */
-    if (psLow & 0x40)
+    // 这次看的位换成了低字节的 bit6（每颗芯片的标志位位置都不一样，以手册为准）
+    if (psLow & 0x40)               // 0x40 = 0100 0000，就是在看 bit6
         return "0";
 
+    // 拼装：高字节只留低 6 位（& 0x3F，高位是 object 标志），低字节只留低 4 位（& 0x0F）
+    //   高字节左移 4 位 + 低字节 4 位 = 10 位
+    //   ⚠ 掩码不能省：不抠掉标志位，读出来会是天文数字（30 变成 4000 多）
     uint16_t ps = ((uint16_t)(psHigh & 0x3F) << 4) | (psLow & 0x0F);
     return QString::number(ps);
 }
 
+// ---------------------------------------------------------------------------
+// 读环境光（ALS）：16 位数据，两字节直接拼，没有掩码（芯片约定高几位恒为 0）
+// ---------------------------------------------------------------------------
 QString Ap3216c::readAlsData()
 {
     uint8_t alsLow = 0, alsHigh = 0;
@@ -157,29 +261,52 @@ QString Ap3216c::readAlsData()
     if (i2cReadReg(AP3216C_ALSDATAHIGH, &alsHigh) < 0)
         return "I2C Error";
 
+    // 高字节左移 8 位再或上低字节 —— 拼两个 8 位为 16 位的标准写法
     uint16_t als = ((uint16_t)alsHigh << 8) | alsLow;
     return QString::number(als);
 }
 
+// ============================================================================
+// 下面三个是"取值函数"：把最新读到的字符串交给外面（页面收到信号后调它们）
+//   命名规矩：成员叫 alsdata（小写 d），取值函数叫 alsData()（大写 D），
+//   头文件里那三个 Q_PROPERTY 就是靠这种"名字 → 函数"的对应关系找到读函数的
+// ============================================================================
 QString Ap3216c::alsData()
 {
-    return alsdata;
+    return alsdata;                 // 环境光（可见光）原始值
 }
 
 QString Ap3216c::irData()
 {
-    return irdata;
+    return irdata;                  // 红外原始值
 }
 
 QString Ap3216c::psData()
 {
-    return psdata;
+    return psdata;                  // 接近原始值（越大 = 反射回来的红外越多 = 东西越近）
 }
 
+// ---------------------------------------------------------------------------
+// 开/关连续采集：true = 每 500ms 读一次，false = 停
+//   谁调它：页面（imx6ulltest.cpp 的「启动检测」/「停止检测」按钮）
+//   ⚠ 参数名 str 是原码留下的（str 是 string 的缩写，这里却是 bool，叫 enabled 更贴切）
+//   stop() 只是"不再触发"：已经读到的数据还在，界面上的数字不会清空
+// ---------------------------------------------------------------------------
 void Ap3216c::setCapture(bool str)
 {
     if(str)
-        timer->start(500);
+        timer->start(500);          // start(毫秒)：每 500ms 发一次 timeout 信号（每秒 2 次）
+                                    //   想更灵敏可以调小；但读一次要十来次系统调用，
+                                    //   太快没意义（芯片自己的采样率也有限）
     else
         timer->stop();
 }
+
+// ============================================================================
+// 想再往前走一步的话，这三处是现成的练习（都不影响当前功能）：
+//   ① new QTimer() → new QTimer(this)：把定时器挂进对象树，消除那处泄漏
+//   ② 读 6 个寄存器要 12 次系统调用 → 先 write 把指针设到 0x0A，再 read(fd, buf, 6)
+//      一次拿回 0x0A~0x0F 六格（靠芯片的地址自增），或改用 ioctl(I2C_RDWR) 组合传输
+//   ③ "I2C Error" 传到页面后被 toInt() 转成了 0 —— 读失败和"真的是 0"分不出来；
+//      页面里先判字符串再决定是否画点，就能区分
+// ============================================================================
