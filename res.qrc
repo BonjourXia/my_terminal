@@ -12,6 +12,54 @@
 <file>images/banna_pic/other/more_than.png</file>      <!-- 右箭头（pushButtonRight） -->
 <file>images/banna_pic/other/normal_gray.png</file>    <!-- 圆点：没选中的样子 -->
 <file>images/banna_pic/other/hover_blue.png</file>     <!-- 圆点：选中的样子 -->
+
+        <!-- ================= 第 5 级 · 音乐播放器 ================= -->
+        <!-- 皮肤分两半：qss 管"长什么样"，png 是 qss 里 url(:/images/music_pic/…) 引用的素材 -->
+        <!--   qss 找不到时代码会自动跳过（musicplay.cpp 里有 file.exists() 判断），不崩，但页面退回裸控件 -->
+        <!--   按钮图几乎都是"常态1 / 按下2"成对的（btn_play1 与 btn_play2 …），少一张那个按钮就少个态 -->
+        <file>style/music_style.qss</file>
+        <file>images/music_pic/cd.png</file>              <!-- 中间那张唱片（代码里 QPixmap 直接引用） -->
+        <file>images/music_pic/sub-page.png</file>        <!-- 唱片底衬 -->
+        <file>images/music_pic/handle.png</file>          <!-- 进度条上的滑块 -->
+        <file>images/music_pic/mask.png</file>            <!-- 歌单上盖的半透明遮罩 -->
+        <file>images/music_pic/btn_play1.png</file>
+        <file>images/music_pic/btn_play2.png</file>
+        <file>images/music_pic/btn_pause1.png</file>
+        <file>images/music_pic/btn_pause2.png</file>
+        <file>images/music_pic/btn_previous1.png</file>
+        <file>images/music_pic/btn_previous2.png</file>
+        <file>images/music_pic/btn_next1.png</file>
+        <file>images/music_pic/btn_next2.png</file>
+        <file>images/music_pic/btn_volume1.png</file>
+        <file>images/music_pic/btn_volume2.png</file>
+        <file>images/music_pic/btn_menu1.png</file>
+        <file>images/music_pic/btn_menu2.png</file>
+        <file>images/music_pic/btn_listcircle1.png</file>
+        <file>images/music_pic/btn_listcircle2.png</file>
+        <file>images/music_pic/btn_favorite_no.png</file>
+        <file>images/music_pic/btn_favorite_yes.png</file>
+
+        <!-- ================= 第 5 级 · 视频播放器 ================= -->
+        <file>style/video_style.qss</file>
+        <file>images/video_pic/bg.png</file>              <!-- 页面背景 -->
+        <file>images/video_pic/add_page.png</file>        <!-- "添加视频"那个方块 -->
+        <file>images/video_pic/handle.png</file>
+        <file>images/video_pic/mask.png</file>
+        <file>images/video_pic/btn_play1.png</file>
+        <file>images/video_pic/btn_play2.png</file>
+        <file>images/video_pic/btn_pause1.png</file>
+        <file>images/video_pic/btn_pause2.png</file>
+        <file>images/video_pic/btn_next1.png</file>
+        <file>images/video_pic/btn_next2.png</file>
+        <file>images/video_pic/btn_screen1.png</file>
+        <file>images/video_pic/btn_screen2.png</file>
+        <file>images/video_pic/btn_fullscreen1.png</file>
+        <file>images/video_pic/btn_fullscreen2.png</file>
+        <file>images/video_pic/btn_volumeup1.png</file>
+        <file>images/video_pic/btn_volumeup2.png</file>
+        <file>images/video_pic/btn_volumedown1.png</file>
+        <file>images/video_pic/btn_volumedown2.png</file>
+
         <!-- 以后每一级要用的图片，一行一个加在这里 -->
     </qresource>
 </RCC>
