@@ -22,8 +22,8 @@ BOARD = $$(MY_TERMINAL_BOARD)
 } else {
     message("=== 构建目标：x86 主机 ===")
     QT += sql
-    # 第 3 级装上 libqt5charts5-dev 后打开：QT += charts
-    # 第 4 级装上 qtmultimedia5-dev   后打开：QT += multimedia multimediawidgets
+   QT += charts
+    QT += multimedia multimediawidgets
 }
 # ================= 目录汇入（见 0.4）=================
 include(./form/form.pri)
