@@ -1,10 +1,50 @@
 ================================================================
-     my_terminal · 改完代码怎么跑到板子上  完整流程速查
-     （2026-10-13 生成，忘了就打开照着敲）
+     my_terminal · 上板速查
+     （2026-10-13 生成；2026-10-16 补 WiFi、并把命令提到最前面）
+     最前面这一块只有命令，照抄就行；为什么这么写、出问题怎么办，全在下面。
+================================================================
+
+================================================================
+【日常照抄：只要命令】
+================================================================
+    # ① 板子连上了吗
+    adb devices
+
+    # ② 板子上网（只有要跑"网络定位"这类联网页面才需要）
+    adb shell "sh /root/wifi.sh"
+
+    # ③ 编译（增删过源文件、改过 .pro/.pri 时，qmake 那句必须跑；
+    #    只改了 .cpp 内容时可以不跑，直接 make）
+    cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/build-arm
+    MY_TERMINAL_BOARD=1 /home/book/100ask_imx6ull-sdk/Buildroot_2020.02.x/output/host/bin/qmake ../my_terminal.pro
+    make -j$(nproc)
+
+    # ④ 推到板子上
+    adb push my_terminal /root/my_terminal/
+
+    # ⑤ 跑起来（后台常驻，不占终端）
+    adb shell "start-stop-daemon -S -b -x /bin/sh -- -c '/root/my_terminal/run.sh >/tmp/myterm.log 2>&1'"
+
+    # ⑥ 看日志 / 停掉
+    adb shell "cat /tmp/myterm.log"
+    adb shell "killall my_terminal"
+
+    # ⑦ 截图看效果（可选）
+    adb shell "dd if=/dev/fb0 of=/tmp/shot.raw bs=4096 count=600"
+    adb pull /tmp/shot.raw /tmp/shot.raw
+    ffmpeg -f rawvideo -pix_fmt bgra -s 1024x600 -i /tmp/shot.raw /tmp/shot.png -y
+
+    # ⑧ 排查问题时用这条（占着终端、报错直接刷在电脑上，Ctrl+C 退出）
+    adb shell "sh /root/my_terminal/run.sh"
+
+
+================================================================
+【下面才是解释：每一步为什么这么写、出问题怎么办】
 ================================================================
 
 【一句话流程】
     改代码 → make 编译 → adb push 推上去 → 杀掉旧进程 → 运行
+    （要跑"网络定位"这种联网页面，运行之前先把板子 WiFi 开起来 —— 见第 0.5 步）
 
 【项目位置（后面所有命令都围绕它）】
     电脑上：/home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal
@@ -19,6 +59,76 @@
     adb devices
         → 显示 "100ask_IMX6ULL   device"  就 OK
         → 空白：重新插一下 USB 线；还不行就 adb kill-server && adb devices
+
+
+----------------------------------------------------------------
+第 0.5 步：让板子上网（要跑"网络定位"这种联网页面才做）
+----------------------------------------------------------------
+    ⚠ 板子上的 WiFi【不是】开机自动连的，断电之后得重做一遍下面四步。
+      两个原因：① 开机脚本 /etc/init.d/S09modload 里根本没有 8723bu；
+                ② 配置文件放在 /tmp，而 /tmp 是内存盘，重启就清空。
+
+    ① 加载 WiFi 模块
+        adb shell "insmod /lib/modules/4.9.88/extra/8723bu.ko"
+        · 路径必须写全，不能写 modprobe 8723bu —— 这个 .ko 不在 modules.dep
+          里，modprobe 只会报 module not found，然后你就以为"网卡坏了"
+        · 敲完这一刻才会冒出 wlan0（在此之前 ifconfig -a 里没这块网卡）
+        · 重复敲会报 "File exists" —— 那说明模块早加载过了，不是故障，接着走 ②
+
+    ② 写连网配置（热点名 sta / 密码 88888888）
+        adb shell "cat > /tmp/wpa.conf <<'EOF'
+        ctrl_interface=/tmp/wpa_supplicant
+        update_config=1
+        network={
+        	ssid=\"sta\"
+        	psk=\"88888888\"
+        }
+        EOF"
+        · ssid/psk 那两行前面是一个【Tab】；带着文档的缩进整段照抄也照样能连
+          （这条命令连同缩进都实测过，直接复制粘贴即可）
+        · 换热点就改这两个引号里的内容
+
+    ③ 连上热点
+        adb shell "wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf -D wext"
+        · -B = 挂到后台跑；-D wext = 用老的 wext 后端
+        · -D wext 不能省：板子上这个 rtl8723 驱动不会通过 cfg80211 上报
+          "已经连上了"（内核日志那句 rtw_cfg80211_indicate_connect(wlan0)
+          BSS not found !!），用默认的 nl80211 后端会卡死在认证之后 ——
+          进程看着在跑、其实永远连不上
+        · 敲完不会立刻连上：要扫一遍信道，实测 6 秒时还停在 SCANNING、
+          十几秒才变成 COMPLETED —— 别急着判定失败，等 20 秒再敲下面验证那三句
+
+    ④ 拿 IP 地址（前三步只是"链路连上"，这一步才给你 IP + 默认路由）
+        adb shell "udhcpc -i wlan0 -n -q -t 8 -T 3"
+        · 成功会打印 "lease of 10.239.x.x obtained" 和 "adding dns ..."
+        · -n 没拿到就退出（此时会失败退出，别当它成功了）
+        · -q 拿到就退出、不在后台常驻续租；租期实测 1 小时（3600 秒），
+          板子连开超过 1 小时网自己掉了，把本步重跑一遍就行
+        · ⚠ 这一步还管着"默认路由"，所以【重连之后必须重跑】：
+          只跑 ③ 不跑 ④ 的典型症状 = ifconfig 看着有 IP、ping 却报
+          Network is unreachable（route -n 里只剩 10.239.x.0 那条子网路由，
+          没有 0.0.0.0 那条默认路由）
+
+    ◆ 验证三句（从"有没有网卡"逐级看下来）：
+        adb shell "ifconfig wlan0"                          看 inet addr 那行有没有地址
+        adb shell "wpa_cli -p /tmp/wpa_supplicant status"   看 wpa_state=COMPLETED
+        adb shell "ping -c 3 223.5.5.5"                     真通了才会 0% packet loss
+      ⚠ wpa_cli 必须带 -p /tmp/wpa_supplicant：它默认去 /var/run/wpa_supplicant
+        找控制口，而我们的配置把控制口放在 /tmp 了 —— 不带 -p 只会输出一片空白，
+        看着像"没连上"，其实是没找对地方
+
+    ◆ 和程序的先后顺序：
+        先联网、再启动 my_terminal（第 4 步）。
+        要是先启动了程序才想起联网：进"网络定位"页会停在"网络不通"，
+        等网通了点一下页面里的【刷新】按钮就好，不用重启程序。
+
+    ◆ 地图瓦片走的是 https，板子上还欠一份根证书：
+        /etc/ssl/certs 出厂是空的 → IP 定位照样能用（那个接口是 http），
+        但高德地图会拉不回来、页面上一片空白。这份证书已经装好了，
+        重刷根文件系统后要再装一次，方法见文末【附录 3】。
+
+    ◆ 嫌四步烦：板子上已经建好这个脚本了（/root/wifi.sh，内容见【附录 2】），
+      以后每次开机只要一句 adb shell "sh /root/wifi.sh"。
 
 
 ----------------------------------------------------------------
@@ -64,7 +174,7 @@
     · 板子上还有一个 run.sh，是启动脚本（第 4 步要用到）。它不随编译变化，
       只有想改启动参数时才需要重推一次：
         adb push run.sh /root/my_terminal/ && adb shell "chmod +x /root/my_terminal/run.sh"
-      板上那份改坏了，照文末【附录】重建即可
+      板上那份改坏了，照文末【附录 1】重建即可
     · 想确认推成功：比对校验和
         电脑：md5sum my_terminal
         板子：adb shell "md5sum /root/my_terminal/my_terminal"
@@ -161,6 +271,14 @@
     adb devices 空白                USB 掉线：重新插线；或 adb kill-server && adb devices
     屏幕全黑 / 还是 Snake 画面      mxapp2 没杀掉：adb shell "killall mxapp2"
     界面正常但触摸没反应            环境变量漏了（重点查 QT_QPA_FB_TSLIB / NO_LIBINPUT）
+    wlan0 找不到 / 上不了网          WiFi 没开：照第 0.5 步走一遍。三个最常漏的 ——
+                                    8723bu 要用 insmod 全路径、wpa_supplicant 要加
+                                    -D wext、最后要 udhcpc 拿 IP
+    有 IP 但 ping 不到外面           少了第 0.5 步的 ④（或重连后忘了重跑它）：
+    （Network is unreachable）       route -n 里没有 0.0.0.0 那条默认路由，
+                                    重跑一次 adb shell "udhcpc -i wlan0 -n -q -t 8 -T 3"
+    网络定位页显示"网络不通"         板子没网（照第 0.5 步开 WiFi）；地图一片空白则多半
+    或地图一片空白                   是 https 证书缺失（见【附录 3】）。页面里点【刷新】重试
     error: closed                   你把 adb shell 敲进了板子里面
                                     先退回电脑提示符（book@100ask:...$）再敲
     file 显示 x86-64                qmake 时忘了 MY_TERMINAL_BOARD=1，回第 1 步重来
@@ -175,23 +293,7 @@
 
 
 ----------------------------------------------------------------
-一分钟速记版（可以整段复制）
-----------------------------------------------------------------
-    cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/build-arm
-    make -j$(nproc)
-    adb push my_terminal /root/my_terminal/
-    adb shell "killall my_terminal; killall mxapp2"
-    adb shell "cd /root/my_terminal && QT_QPA_PLATFORM=linuxfb QT_QPA_FB_NO_LIBINPUT=1 QT_QPA_FB_TSLIB=1 TSLIB_TSDEVICE=/dev/input/event1 TSLIB_CONFFILE=/etc/ts.conf TSLIB_PLUGINDIR=/usr/lib/ts TSLIB_CALIBFILE=/etc/pointercal TSLIB_FBDEVICE=/dev/fb0 XDG_RUNTIME_DIR=/tmp/runtime-root ./my_terminal"
-
-    最后一条会一直占着终端（前台运行），Ctrl+C 退出。
-    （也可以简写成 adb shell "sh /root/my_terminal/run.sh"）
-
-    不想占终端、要它一直在板上跑：
-    adb shell "start-stop-daemon -S -b -x /bin/sh -- -c '/root/my_terminal/run.sh >/tmp/myterm.log 2>&1'"
-
-
-----------------------------------------------------------------
-附录：板子上 /root/my_terminal/run.sh 的内容（改坏了照这个重建）
+附录 1：板子上 /root/my_terminal/run.sh 的内容（改坏了照这个重建）
 ----------------------------------------------------------------
     #!/bin/sh
     killall mxapp2 2>/dev/null
@@ -215,5 +317,85 @@
     · 最后 exec ./my_terminal：exec 表示"用这个程序替换掉脚本本身"，
       所以进程就是 my_terminal 自己（ps 里看到的是 ./my_terminal，没有多余的 sh）
     · 改完记得 adb shell "chmod +x /root/my_terminal/run.sh"
+
+
+----------------------------------------------------------------
+附录 2：板子上 /root/wifi.sh 的内容（已经建好了，改坏了照这个重建）
+----------------------------------------------------------------
+    板子上已经放好这个脚本了（/root/wifi.sh，chmod +x 过），
+    所以第 0.5 步那四步，日常只要跑一句：
+        adb shell "sh /root/wifi.sh"
+
+    电脑上的项目里也留了一份副本：my_terminal/wifi.sh
+    板子重刷之后推一次即可：
+        cd /home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal
+        adb push wifi.sh /root/wifi.sh && adb shell "chmod +x /root/wifi.sh"
+
+    脚本内容（下面这份和板子上那份一模一样）：
+    #!/bin/sh
+    # 板子上网：加载网卡 → 写配置 → 连热点 → 拿 IP。板子每次开机跑一遍。
+    # 用法（在电脑上）：adb shell "sh /root/wifi.sh"
+    # 板子上坏了就照《上板流程速查.txt》附录 2 重建，或重新推一次本文件。
+
+    killall wpa_supplicant 2>/dev/null      # 重复跑本脚本时，先清掉上一次的
+    sleep 1
+    grep -q '^8723bu' /proc/modules || insmod /lib/modules/4.9.88/extra/8723bu.ko
+
+    # 下面到 EOF 之间的内容建议顶格写：heredoc 里的缩进会原样写进配置文件
+    # （实测带着缩进 wpa_supplicant 也认，但顶格最保险）
+    cat > /tmp/wpa.conf <<'EOF'
+    ctrl_interface=/tmp/wpa_supplicant
+    update_config=1
+    network={
+    	ssid="sta"
+    	psk="88888888"
+    }
+    EOF
+    wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf -D wext
+    udhcpc -i wlan0 -n -q -t 8 -T 3 || echo "!! 没拿到 IP —— 查 wpa_cli -p /tmp/wpa_supplicant status"
+    ifconfig wlan0 | grep "inet addr"
+
+    · 上面为了跟文档对齐，脚本内容都缩进了 4 格 —— 真写在板子上时去掉缩进；
+      尤其是 cat 到 EOF 之间那几行，缩进会原样进配置文件（顶着写最保险）
+    · 这份脚本在板子上实跑过（就是从 /root/wifi.sh 跑的）：网已经连着的时候
+      再跑一遍，它会把旧的 wpa_supplicant 清掉重连、并且重新拿到默认路由，
+      全程不用你插手 —— 哪天网掉了，第一反应就是重跑这一句
+    · 跑的时候会刷几行吓人的警告，都是正常的，无视：
+        rfkill: Cannot open RFKILL control device
+        ioctl[SIOCSIWAP]: Operation not permitted
+        ioctl[SIOCSIWENCODEEXT]: Invalid argument
+      —— 用 wext 后端就会有这些；判断成败只看最后那行 inet addr（或再 ping 一下）
+    · 最后两行是给你看的：拿到了会打印 inet addr 那一行，没拿到会打那句提示
+    · 租期只有 1 小时（实测路由器给 3599~3600 秒），而 udhcpc -q 拿到就退出、
+      不在后台续租 —— 板子连续开着超过 1 小时要是网自己掉了，重跑本脚本即可
+    · 换热点：改 ssid / psk 两个引号里的内容；建好后 chmod +x（用 sh 跑不加也行）
+    · 为什么不把它做成"开机自动跑"：板子一断电就重来，手动一句反而心里有数。
+      真要做成自动，就是照这个内容写 /etc/init.d/S99wifi 再 chmod +x，
+      但那样一开机就抢网卡、日志也不好看了
+
+
+----------------------------------------------------------------
+附录 3：给板子装根证书（重刷了根文件系统才需要做）
+----------------------------------------------------------------
+    症状：IP 定位正常（走 http），但"网络定位"页的地图一片空白（瓦片走 https）。
+    原因：板子出厂的 /etc/ssl/certs 是空的，https 验不了证书。
+
+    电脑上（把系统那一份证书包拆成一张张）：
+        mkdir -p /tmp/ca && cd /tmp/ca && rm -f *.pem
+        awk 'BEGIN{n=0} /-----BEGIN CERTIFICATE-----/{n++} n>0{print > sprintf("%04d.pem", n)}' \
+            /etc/ssl/certs/ca-certificates.crt
+        ls *.pem | wc -l                    # 应该是 121
+        tar cf /tmp/ca.tar *.pem
+
+    推过去装上：
+        adb push /tmp/ca.tar /tmp/
+        adb shell "mkdir -p /etc/ssl/certs && tar xf /tmp/ca.tar -C /etc/ssl/certs && openssl rehash /etc/ssl/certs"
+        adb push /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
+
+    · 为什么不用 tar -z：板子上是 busybox 的 tar，不认 -z，压缩包解不开
+    · openssl rehash 必须做：它给每张证书按内容建一个哈希名软链接（xxxxxxxx.0），
+      Qt/OpenSSL 是按这个哈希名去找证书的 —— 少了这一步证书等于白装
+    · 验证：adb shell "ls /etc/ssl/certs | wc -l" 应该在 240 上下
+      （121 张证书 + 121 个哈希链接 + cert.pem）
 
 ================================================================
