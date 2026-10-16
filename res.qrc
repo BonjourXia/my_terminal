@@ -60,6 +60,11 @@
         <file>images/video_pic/btn_volumedown1.png</file>
         <file>images/video_pic/btn_volumedown2.png</file>
 
+        <!-- ================= 第 8 级 · 网络定位 ================= -->
+        <!-- 这一页只要一份 qss，一张图片都不用：地图是从高德服务器实时拉的，
+             定位点是 QPainter 现画的（见 gpslocation.cpp 的 drawMarker） -->
+        <file>style/gps_style.qss</file>
+
         <!-- 以后每一级要用的图片，一行一个加在这里 -->
     </qresource>
 </RCC>

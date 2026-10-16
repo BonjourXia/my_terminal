@@ -5,6 +5,7 @@
 #include "form/videoplayer.h"
 #include "form/videoplayer.h"
 #include"imx6ulltest.h"    // 第 3 级：板载传感器页面（LED/BEEP + AP3216C 曲线 + ICM20608 六轴）
+#include "gpslocation.h"    // 第 8 级：网络定位页（调 IP 定位 API + 拼高德地图瓦片）
 
 // ==========================================================================
 // 导航栏每一项的"数据模板"：相当于一行两列的小表格
@@ -100,6 +101,10 @@ void MainWidget::windows_init()
         {"板载传感器", []() -> QWidget * { return new imx6ullTest; } },   
          {"音乐播放器", []() -> QWidget * { return new MusicPlay; } },   // 空占位页
         {"视频播放器", []() -> QWidget * { return new VideoPlayer; } },   // 同上
+        // 第 8 级：这一页的数据不在板子上、在网上 ——
+        //   注意它的构造**不发请求**，要等用户真点进这一页（showEvent）才去联网。
+        //   因为下面这个循环是开机就把所有页面 new 出来的，构造函数里联网会拖慢启动。
+        {"网络定位", []() -> QWidget * { return new GpsLocation; } },
     };
 
     // 一趟循环同时喂两个容器：第 n 次迭代既加列表项、又加页面 → 两边的序号天然对齐
