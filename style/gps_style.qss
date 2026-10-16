@@ -1,0 +1,82 @@
+/* ==========================================================================
+   style/gps_style.qss —— 网络定位页的皮肤（第 8 级新增）
+
+   怎么生效：form/gpslocation.cpp 的 ui_init() 里先给页面 setObjectName("gpsPage")，
+   然后页面自己把这份 qss setStyleSheet 上去。qss 里的 #gpsPage 就是按这个名字找上门的。
+
+   为什么不像别的页面那样用图片当皮肤：
+   这一页是全新写的，没有现成素材图，纯色 + 字体排版就够了 ——
+   反正好看的那部分（地图）是从网上拉来的真地图，不需要我们再画。
+   ========================================================================== */
+
+/* 整页底色。和音乐/视频页的 #25242a 保持一致，切页时不会闪一下颜色 */
+QWidget {
+    background-color: #25242a;
+}
+
+/* 左上角标题 */
+QLabel#gpsTitle {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+/* 地图那块。没拉到瓦片时露出的就是这里的底色（比整页底色稍浅一点，像个"凹槽"） */
+QLabel#gpsMap {
+    background-color: #2b2b2b;
+    border: 1px solid #3c3c3c;
+    border-radius: 6px;
+}
+
+/* 地图下面那行小灰字：正在获取 / 上次更新 / 错误提示 */
+QLabel#gpsStatus {
+    color: #8a8a8a;
+    font-size: 12px;
+}
+
+/* 右侧大字城市名 */
+QLabel#gpsCity {
+    color: #308cc6;
+    font-size: 30px;
+    font-weight: bold;
+}
+
+/* 右侧城市下面那行"中国 · 重庆市" */
+QLabel#gpsAddr {
+    color: #b0b0b0;
+    font-size: 14px;
+}
+
+/* 右侧"键"列：纬度 / 经度 / 公网 IP … */
+QLabel#gpsKey {
+    color: #7a7a7a;
+    font-size: 13px;
+}
+
+/* 右侧"值"列 */
+QLabel#gpsVal {
+    color: #ffffff;
+    font-size: 14px;
+}
+
+/* 刷新按钮 */
+QPushButton#gpsRefresh {
+    color: #ffffff;
+    background-color: #308cc6;
+    border: none;
+    border-radius: 4px;
+    font-size: 15px;
+}
+
+/* 按下时换个深一点的颜色，让触摸有反馈 ——
+   板子是电阻屏，不换色的话点下去到底有没有生效不太好判断 */
+QPushButton#gpsRefresh:pressed {
+    background-color: #26709e;
+}
+
+/* 请求在路上的时候按钮是禁用的（gpslocation.cpp 里 setEnabled(false)），
+   变灰提示"现在点没用" */
+QPushButton#gpsRefresh:disabled {
+    background-color: #3a3a3a;
+    color: #6a6a6a;
+}
