@@ -4,6 +4,7 @@ HEADERS += \
     $$PWD/musicplay.h \
     $$PWD/videoplayer.h \
     $$PWD/gpslocation.h \
+    $$PWD/sqliteclock.h \
 
 
 SOURCES += \
@@ -12,3 +13,4 @@ SOURCES += \
     $$PWD/musicplay.cpp \
     $$PWD/videoplayer.cpp \
     $$PWD/gpslocation.cpp \
+    $$PWD/sqliteclock.cpp \
