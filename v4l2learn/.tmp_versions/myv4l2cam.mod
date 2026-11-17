@@ -1,0 +1,3 @@
+/home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/v4l2learn/myv4l2cam.ko
+/home/book/Desktop/xiangmu/smart_terminal-main/smart_terminal-main/my_terminal/v4l2learn/myv4l2cam.o
+
