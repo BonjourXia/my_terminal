@@ -25,3 +25,6 @@ qrc_*.cpp
 *.md
 *.html
 *.txt
+
+# README 还是要给仓库留一份（只放行仓库根目录那个）
+!/README.md
